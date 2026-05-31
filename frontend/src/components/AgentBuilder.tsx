@@ -19,7 +19,7 @@ const MODELS: Record<ModelOption, ModelMeta> = {
   'claude-haiku-4-5':  { label: 'Claude Haiku 4.5',   provider: 'Anthropic', inputPer1M: '$0.80',   outputPer1M: '$4.00',   tier: 'fast'     },
   'gpt-4o':            { label: 'GPT-4o',             provider: 'OpenAI',    inputPer1M: '$2.50',   outputPer1M: '$10.00',  tier: 'balanced' },
   'gpt-4o-mini':       { label: 'GPT-4o mini',        provider: 'OpenAI',    inputPer1M: '$0.15',   outputPer1M: '$0.60',   tier: 'fast'     },
-  'groq-llama3':       { label: 'Groq Llama 3.1 70B', provider: 'Groq',      inputPer1M: '$0.59',   outputPer1M: '$0.79',   tier: 'fast'     },
+  'llama-3.3-70b-versatile': { label: 'Groq Llama 3.3 70B', provider: 'Groq', inputPer1M: '$0.59',   outputPer1M: '$0.79',   tier: 'fast'     },
 }
 
 const TIER_BADGE: Record<ModelMeta['tier'], string> = {

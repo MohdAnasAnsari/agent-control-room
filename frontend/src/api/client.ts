@@ -15,6 +15,8 @@
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+import { getToken } from '../hooks/useAPI'
+
 export interface APIErrorPayload {
   error: {
     code: string
@@ -60,7 +62,9 @@ class APIClient {
   private readonly responseInterceptors: ResponseInterceptor[] = []
 
   constructor(baseURL: string) {
-    this.baseURL = baseURL.replace(/\/$/, '')
+    let normalized = baseURL.replace(/\/$/, '')
+    if (normalized.startsWith('/')) normalized = `${window.location.origin}${normalized}`
+    this.baseURL = normalized
   }
 
   /** Register a function to run before every request. */
@@ -74,13 +78,13 @@ class APIClient {
   }
 
   private buildURL(path: string, params?: Record<string, string | number | boolean | undefined | null>): string {
-    const url = new URL(`${this.baseURL}${path}`, window.location.origin)
+    const url = new URL(`${this.baseURL}${path}`, this.baseURL)
     if (params) {
       Object.entries(params).forEach(([k, v]) => {
         if (v !== undefined && v !== null) url.searchParams.set(k, String(v))
       })
     }
-    return url.pathname + url.search
+    return url.toString()
   }
 
   private async runRequestInterceptors(config: RequestConfig): Promise<RequestConfig> {
@@ -168,11 +172,12 @@ class APIClient {
 
 // ── Singleton ─────────────────────────────────────────────────────────────────
 
-export const apiClient = new APIClient('/api/v1')
+const apiOrigin = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:8000'
+export const apiClient = new APIClient(`${apiOrigin ?? ''}/api/v1`)
 
 // ── Request interceptor: attach auth token ────────────────────────────────────
 apiClient.addRequestInterceptor((config) => {
-  const token = localStorage.getItem('auth_token')
+  const token = getToken()
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`
   }
@@ -182,7 +187,6 @@ apiClient.addRequestInterceptor((config) => {
 // ── Response interceptor: 401 → clear session ─────────────────────────────────
 apiClient.addResponseInterceptor((response) => {
   if (response.status === 401) {
-    localStorage.removeItem('auth_token')
     // Avoid redirect loop on the login page itself
     if (!window.location.pathname.startsWith('/login')) {
       window.dispatchEvent(new CustomEvent('auth:expired'))

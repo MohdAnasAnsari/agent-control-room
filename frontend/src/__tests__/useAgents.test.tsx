@@ -3,7 +3,7 @@
  * Covers: list fetch, cache TTL, refetch, error handling, create/update/delete.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useAgents, useCreateAgent, useDeleteAgent, useUpdateAgent } from '../hooks/useAgents'
 
@@ -166,12 +166,14 @@ describe('useUpdateAgent', () => {
 
     const { result } = renderHook(() => useUpdateAgent())
 
-    let res: BackendAgent | null = null
+    let res: BackendAgent | null | undefined
     await act(async () => {
       res = await result.current.mutate('aaaa-0001', { name: 'Updated Name' })
     })
 
-    expect(res?.name).toBe('Updated Name')
+    expect(res).toBeTruthy()
+    expect(res!).not.toBeNull()
+    expect(res!.name).toBe('Updated Name')
   })
 
   it('calls PATCH on the correct agent ID', async () => {

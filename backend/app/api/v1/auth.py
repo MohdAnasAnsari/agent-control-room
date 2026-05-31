@@ -144,7 +144,8 @@ async def login(
         secure=settings.ENFORCE_HTTPS,
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path="/auth/refresh",
+        # Allow refresh from both `/auth/refresh` (legacy) and `/api/v1/auth/refresh` (v1)
+        path="/",
     )
 
     return TokenResponse(
@@ -236,5 +237,5 @@ async def logout(
     await audit(db, AuditAction.USER_LOGOUT,
                 user_id=user_id, resource_type="user", request=request)
 
-    response.delete_cookie(key="refresh_token", path="/auth/refresh")
+    response.delete_cookie(key="refresh_token", path="/")
     return {"success": True}

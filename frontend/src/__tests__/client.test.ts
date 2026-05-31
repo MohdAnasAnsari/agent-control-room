@@ -7,36 +7,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { APIError, isNetworkError, getErrorMessage } from '../api/client'
 
-// We test the class directly by creating a fresh instance each test
-async function makeClient() {
-  // Dynamic import so each test gets a module with fresh state
-  const { APIError: Err, getErrorMessage: gErr, isNetworkError: isNet } = await import('../api/client')
-
-  class TestClient {
-    private baseURL = '/api/v1'
-    private reqInterceptors: Array<(c: { headers: Record<string, string> }) => { headers: Record<string, string> }> = []
-    private resInterceptors: Array<(r: Response) => Response> = []
-
-    addRequestInterceptor(fn: (c: { headers: Record<string, string> }) => { headers: Record<string, string> }) {
-      this.reqInterceptors.push(fn)
-    }
-
-    async runReq(config: { headers: Record<string, string> }) {
-      let c = config
-      for (const fn of this.reqInterceptors) c = fn(c)
-      return c
-    }
-
-    async runRes(response: Response) {
-      let r = response
-      for (const fn of this.resInterceptors) r = fn(r)
-      return r
-    }
-  }
-
-  return { TestClient, Err, gErr, isNet }
-}
-
 // ── APIError classification ────────────────────────────────────────────────────
 
 describe('APIError', () => {

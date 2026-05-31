@@ -1,4 +1,4 @@
-version: "3.9"
+# (Compose spec) `version` is obsolete; keeping it out avoids warnings.
 
 # ── Services ──────────────────────────────────────────────────────────────────
 services:
@@ -65,6 +65,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:8000
     ports:
       - "3000:3000"
     depends_on:

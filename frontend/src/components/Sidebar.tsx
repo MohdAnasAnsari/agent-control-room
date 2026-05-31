@@ -12,12 +12,13 @@ import {
   LogOut,
   Zap,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 
 interface NavItem {
   to: string
   label: string
-  icon: React.ComponentType<{ className?: string; size?: number }>
+  icon: LucideIcon
   badge?: string
 }
 

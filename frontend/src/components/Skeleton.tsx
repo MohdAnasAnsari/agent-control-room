@@ -4,16 +4,17 @@
  */
 
 import clsx from 'clsx'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 
 // ── Base shimmer ──────────────────────────────────────────────────────────────
 
 interface SkeletonProps {
   className?: string
   rounded?: 'sm' | 'md' | 'lg' | 'full'
+  style?: CSSProperties
 }
 
-export function Skeleton({ className, rounded = 'md' }: SkeletonProps) {
+export function Skeleton({ className, rounded = 'md', style }: SkeletonProps) {
   const radii = { sm: 'rounded', md: 'rounded-lg', lg: 'rounded-xl', full: 'rounded-full' }
   return (
     <div
@@ -23,6 +24,7 @@ export function Skeleton({ className, rounded = 'md' }: SkeletonProps) {
         radii[rounded],
         className
       )}
+      style={style}
     />
   )
 }
@@ -72,7 +74,7 @@ export function TableRowSkeleton({ cols = 5 }: { cols?: number }) {
     <tr>
       {Array.from({ length: cols }).map((_, i) => (
         <td key={i} className="px-4 py-3">
-          <Skeleton className="h-4" style={{ width: `${60 + Math.random() * 30}%` } as React.CSSProperties} />
+          <Skeleton className="h-4" style={{ width: `${60 + Math.random() * 30}%` } as CSSProperties} />
         </td>
       ))}
     </tr>

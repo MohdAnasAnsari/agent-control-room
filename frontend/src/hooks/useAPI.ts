@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import type { APIError } from '../types'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 // Token accessor — set by AuthProvider so the API client can read the current token
 // without importing useAuth (which would create a circular dep).
@@ -9,6 +9,10 @@ let _getToken: (() => string | null) | null = null
 
 export function setTokenAccessor(fn: () => string | null) {
   _getToken = fn
+}
+
+export function getToken(): string | null {
+  return _getToken?.() ?? null
 }
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {

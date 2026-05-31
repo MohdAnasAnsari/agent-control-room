@@ -72,8 +72,9 @@ export const executionsApi = {
   /** Returns the WebSocket URL for live execution monitoring. */
   wsUrl(id: string): string {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const host = import.meta.env.VITE_API_URL
-      ? new URL(import.meta.env.VITE_API_URL as string).host
+    const apiUrl = import.meta.env.VITE_API_URL as string | undefined
+    const host = apiUrl
+      ? new URL(apiUrl).host
       : window.location.host
     return `${protocol}://${host}/ws/executions/${id}`
   },

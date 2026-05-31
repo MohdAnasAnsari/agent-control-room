@@ -175,7 +175,7 @@ export type ModelOption =
   | 'claude-haiku-4-5'
   | 'gpt-4o'
   | 'gpt-4o-mini'
-  | 'groq-llama3'
+  | 'llama-3.3-70b-versatile'
 
 export type ToolOption =
   | 'web_search'

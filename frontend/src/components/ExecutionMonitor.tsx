@@ -5,6 +5,7 @@ import {
   CheckCircle, XCircle, Clock, Loader, Zap, TrendingUp,
   AlertTriangle, Wifi, WifiOff,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import LiveCanvas from './LiveCanvas'
 import LogsPanel from './LogsPanel'
@@ -123,7 +124,7 @@ function useElapsed(startTime: Date | null, active: boolean): string {
 // ─── Metrics Cards ────────────────────────────────────────────────────────────
 
 const MetricCard = memo(({ icon: Icon, label, value, sub, color }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>
+  icon: LucideIcon
   label: string; value: string; sub?: string; color: string
 }) => (
   <div className={clsx('flex items-center gap-2.5 p-3 rounded-xl border', color)}>
@@ -200,7 +201,7 @@ function MetricsGrid({ metrics, elapsedLabel }: { metrics: LiveMetrics; elapsedL
 
 // ─── Execution Timeline (left sidebar) ───────────────────────────────────────
 
-const STATUS_ICON: Record<NodeRunStatus, React.ComponentType<{ size?: number; className?: string }>> = {
+const STATUS_ICON: Record<NodeRunStatus, LucideIcon> = {
   idle:      Clock,
   running:   Loader,
   completed: CheckCircle,

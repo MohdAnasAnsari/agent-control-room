@@ -61,7 +61,6 @@ function TokenBridge() {
 
 function AppShell() {
   const { theme, toggle } = useTheme()
-  const { isAuthenticated } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import { Bot, Wrench, GitBranch, Cpu, MoreVertical, Circle } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import type { Agent, AgentStatus, AgentType } from '../types'
 
@@ -11,7 +12,7 @@ const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string; dotColo
   disabled: { label: 'Disabled', color: 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30',  dotColor: 'text-amber-500' },
 }
 
-const TYPE_ICON: Record<AgentType, React.ComponentType<{ size?: number; className?: string }>> = {
+const TYPE_ICON: Record<AgentType, LucideIcon> = {
   llm:        Bot,
   tool:       Wrench,
   supervisor: GitBranch,

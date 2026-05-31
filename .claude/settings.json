@@ -16,7 +16,11 @@
       "Bash(Format-Table -AutoSize)",
       "PowerShell(tree /F \"c:\\\\Users\\\\ADMIN\\\\Desktop\\\\Voqal and MultiAgent\\\\Multi-Agent-Orchestrator\\\\agent-control-room\\\\backend\\\\app\" -L 3 2>$null)",
       "PowerShell(head -80)",
-      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\ADMIN\\\\Desktop\\\\Voqal and MultiAgent\\\\Multi-Agent-Orchestrator\\\\agent-control-room\\\\backend\" -Force | Where-Object { $_.Name -notmatch '__pycache__|\\\\.egg-info|\\\\.git' } | Select-Object Name, Mode | Format-Table -AutoSize)"
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\ADMIN\\\\Desktop\\\\Voqal and MultiAgent\\\\Multi-Agent-Orchestrator\\\\agent-control-room\\\\backend\" -Force | Where-Object { $_.Name -notmatch '__pycache__|\\\\.egg-info|\\\\.git' } | Select-Object Name, Mode | Format-Table -AutoSize)",
+      "PowerShell(& psql \"postgresql://postgres:password@localhost:5432/orchestrator\" -c \"TRUNCATE TABLE execution_steps, agent_contexts, executions, agent_states, workflows, agents RESTART IDENTITY CASCADE;\" 2>&1)",
+      "PowerShell(docker exec agent-control-room-postgres-1 psql -U postgres -d orchestrator -c \"TRUNCATE TABLE execution_steps, agent_contexts, executions, agent_states, workflows, agents RESTART IDENTITY CASCADE;\" 2>&1)",
+      "PowerShell(docker exec agent-control-room-postgres-1 sh -c \"psql -l\" 2>&1)",
+      "PowerShell(docker exec agent-control-room-postgres-1 psql -U orchestrator -d orchestrator_dev -c \"TRUNCATE TABLE execution_steps, agent_contexts, executions, agent_states, workflows, agents RESTART IDENTITY CASCADE;\" 2>&1)"
     ],
     "additionalDirectories": [
       "c:\\Users\\ADMIN\\.claude\\projects\\c--Users-ADMIN-Desktop-Voqal-and-MultiAgent-Multi-Agent-Orchestrator-agent-control-room\\memory"

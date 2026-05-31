@@ -3,6 +3,7 @@ import {
   Save, Trash2, ZoomIn, ZoomOut, RotateCcw, AlertCircle, CheckCircle,
   Download, Maximize2, Bot, GitBranch, Play,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { useCanvas, WORLD_W, WORLD_H } from '../hooks/useCanvas'
 import type { CanvasNode, CanvasEdge, AgentRole, ValidationError } from '../types'
@@ -67,7 +68,7 @@ const ROLE_CLASSES: Record<AgentRole | 'default', string> = {
   default:    'border-gray-400   bg-gray-50    text-gray-800   dark:bg-gray-700    dark:border-gray-500  dark:text-gray-200',
 }
 
-const TEMPLATES: Array<{ type: CanvasNode['type']; role?: AgentRole; label: string; icon: React.ComponentType<{ size?: number }> }> = [
+const TEMPLATES: Array<{ type: CanvasNode['type']; role?: AgentRole; label: string; icon: LucideIcon }> = [
   { type: 'agent', role: 'analyst',    label: 'Analyst',    icon: Bot },
   { type: 'agent', role: 'researcher', label: 'Researcher', icon: Bot },
   { type: 'agent', role: 'writer',     label: 'Writer',     icon: Bot },

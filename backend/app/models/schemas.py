@@ -109,6 +109,11 @@ ALLOWED_MODELS = {
     "llama-3.3-70b-versatile",
 }
 
+MODEL_ALIASES = {
+    "claude-haiku-4-5": "claude-haiku-4-5-20251001",
+    "groq-llama3": "llama-3.3-70b-versatile",
+}
+
 
 class AgentCreate(BaseModel):
     name: str = Field(min_length=3, max_length=50)
@@ -120,6 +125,7 @@ class AgentCreate(BaseModel):
     @field_validator("model")
     @classmethod
     def validate_model(cls, v: str) -> str:
+        v = MODEL_ALIASES.get(v, v)
         if v not in ALLOWED_MODELS:
             raise ValueError(f"Model must be one of: {', '.join(sorted(ALLOWED_MODELS))}")
         return v
@@ -136,6 +142,8 @@ class AgentUpdate(BaseModel):
     @field_validator("model")
     @classmethod
     def validate_model(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = MODEL_ALIASES.get(v, v)
         if v is not None and v not in ALLOWED_MODELS:
             raise ValueError(f"Model must be one of: {', '.join(sorted(ALLOWED_MODELS))}")
         return v

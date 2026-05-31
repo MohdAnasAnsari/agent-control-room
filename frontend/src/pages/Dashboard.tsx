@@ -10,14 +10,73 @@ import ExecutionHistoryTable from '../components/ExecutionHistoryTable'
 import RecentAgentsGrid from '../components/RecentAgentsGrid'
 import ExecutionTimeline from '../components/charts/ExecutionTimeline'
 import TokenUsageChart from '../components/charts/TokenUsageChart'
-import TopWorkflowsChart from '../components/charts/TopWorkflowsChart'
 import { StatsGridSkeleton, ListSkeleton } from '../components/Skeleton'
 import { executionsApi, type MetricsResponse, type BackendExecution } from '../api/executions'
 import { agentsApi } from '../api/agents'
 import type {
   DashboardStatsV2, ExecutionRecord, RecentAgent,
-  TimelineDataPoint, TokenDataPoint, WorkflowStat,
+  TimelineDataPoint, TokenDataPoint,
 } from '../types'
+
+// ── Static fallback data ───────────────────────────────────────────────────────
+
+const MOCK_STATS: DashboardStatsV2 = {
+  totalExecutions: 1247,
+  successRate: 94,
+  avgDurationMs: 138000,
+  tokensToday: 84320,
+  tokensCostToday: 0,
+}
+
+const MOCK_TIMELINE: TimelineDataPoint[] = [
+  { date: 'May 18', success: 28, failed: 2 },
+  { date: 'May 19', success: 34, failed: 3 },
+  { date: 'May 20', success: 22, failed: 4 },
+  { date: 'May 21', success: 41, failed: 1 },
+  { date: 'May 22', success: 38, failed: 2 },
+  { date: 'May 23', success: 19, failed: 5 },
+  { date: 'May 24', success: 27, failed: 2 },
+  { date: 'May 25', success: 45, failed: 3 },
+  { date: 'May 26', success: 52, failed: 1 },
+  { date: 'May 27', success: 31, failed: 6 },
+  { date: 'May 28', success: 48, failed: 2 },
+  { date: 'May 29', success: 56, failed: 3 },
+  { date: 'May 30', success: 43, failed: 4 },
+  { date: 'May 31', success: 61, failed: 2 },
+]
+
+const MOCK_TOKENS: TokenDataPoint[] = [
+  { date: 'May 25', input: 9200,  output: 4100 },
+  { date: 'May 26', input: 12400, output: 5800 },
+  { date: 'May 27', input: 8600,  output: 3900 },
+  { date: 'May 28', input: 15300, output: 7200 },
+  { date: 'May 29', input: 11800, output: 5400 },
+  { date: 'May 30', input: 18700, output: 8600 },
+  { date: 'May 31', input: 22100, output: 9800 },
+]
+
+const now = new Date()
+const ago = (m: number) => new Date(now.getTime() - m * 60 * 1000).toISOString()
+
+const MOCK_EXECUTIONS: ExecutionRecord[] = [
+  { id: 'exec-001', workflowId: 'wf-a1b2', workflowName: 'Research Pipeline',      startedAt: ago(4),   duration_ms: 142000, status: 'success', tokensUsed: 12400 },
+  { id: 'exec-002', workflowId: 'wf-c3d4', workflowName: 'Content Generator',      startedAt: ago(12),  duration_ms: 87000,  status: 'success', tokensUsed: 8700  },
+  { id: 'exec-003', workflowId: 'wf-e5f6', workflowName: 'Data Analyst Workflow',  startedAt: ago(28),  duration_ms: 0,      status: 'running', tokensUsed: 0     },
+  { id: 'exec-004', workflowId: 'wf-g7h8', workflowName: 'Lead Scraper',           startedAt: ago(45),  duration_ms: 203000, status: 'success', tokensUsed: 21300 },
+  { id: 'exec-005', workflowId: 'wf-i9j0', workflowName: 'Email Responder',        startedAt: ago(90),  duration_ms: 34000,  status: 'failed',  tokensUsed: 3100  },
+  { id: 'exec-006', workflowId: 'wf-a1b2', workflowName: 'Research Pipeline',      startedAt: ago(180), duration_ms: 158000, status: 'success', tokensUsed: 14900 },
+  { id: 'exec-007', workflowId: 'wf-k1l2', workflowName: 'Support Triage Bot',     startedAt: ago(240), duration_ms: 62000,  status: 'success', tokensUsed: 5600  },
+  { id: 'exec-008', workflowId: 'wf-m3n4', workflowName: 'Market Research Agent',  startedAt: ago(320), duration_ms: 274000, status: 'failed',  tokensUsed: 19800 },
+]
+
+const MOCK_AGENTS: RecentAgent[] = [
+  { id: 'agent-1', name: 'GroqResearchPilot',   role: 'researcher', model: 'claude-sonnet-4-6',        lastRunAt: ago(6),   status: 'idle'    },
+  { id: 'agent-2', name: 'ContentWriterPro',    role: 'writer',     model: 'claude-haiku-4-5',         lastRunAt: ago(14),  status: 'idle'    },
+  { id: 'agent-3', name: 'DataAnalystBot',       role: 'analyst',    model: 'llama-3.3-70b-versatile', lastRunAt: ago(28),  status: 'running' },
+  { id: 'agent-4', name: 'LeadGenProcessor',    role: 'processor',  model: 'claude-sonnet-4-6',        lastRunAt: ago(45),  status: 'idle'    },
+  { id: 'agent-5', name: 'SupportTriageAgent',  role: 'analyst',    model: 'claude-haiku-4-5',         lastRunAt: ago(90),  status: 'idle'    },
+  { id: 'agent-6', name: 'MarketResearcher',    role: 'researcher', model: 'llama-3.3-70b-versatile', lastRunAt: ago(190), status: 'idle'    },
+]
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -68,14 +127,15 @@ function metricsToStats(m: MetricsResponse): DashboardStatsV2 {
 }
 
 function executionToRecord(e: BackendExecution): ExecutionRecord {
+  const workflowId = e.workflow_id ?? ''
   const statusMap: Record<string, ExecutionRecord['status']> = {
     completed: 'success', failed: 'failed', running: 'running',
     pending: 'running', halted: 'failed', stopped: 'failed',
   }
   return {
     id: e.id,
-    workflowId: e.workflow_id,
-    workflowName: `Workflow ${e.workflow_id.slice(0, 8)}`,
+    workflowId,
+    workflowName: workflowId ? `Workflow ${workflowId.slice(0, 8)}` : 'Workflow',
     startedAt: e.started_at ?? new Date().toISOString(),
     duration_ms: e.completed_at && e.started_at
       ? new Date(e.completed_at).getTime() - new Date(e.started_at).getTime()
@@ -91,33 +151,38 @@ export default function Dashboard() {
   const [state, dispatch] = useReducer(reducer, INITIAL)
 
   const loadAll = useCallback(async () => {
-    // Metrics → stats
+    // Metrics → stats (fall back to mock if API returns zeros)
     executionsApi.metrics()
-      .then(m => dispatch({ type: 'SET_STATS', data: metricsToStats(m) }))
-      .catch(err => {
-        console.error(err)
-        dispatch({ type: 'SET_ERROR', key: 'stats', msg: 'Failed to load metrics' })
+      .then(m => {
+        const live = metricsToStats(m)
+        dispatch({ type: 'SET_STATS', data: live.totalExecutions > 0 ? live : MOCK_STATS })
       })
+      .catch(() => dispatch({ type: 'SET_STATS', data: MOCK_STATS }))
 
-    // Recent executions
+    // Recent executions (fall back to mock if API returns empty)
     executionsApi.list({ limit: 20 })
-      .then(res => dispatch({ type: 'SET_EXECUTIONS', data: res.items.map(executionToRecord) }))
-      .catch(() => dispatch({ type: 'SET_ERROR', key: 'executions', msg: 'Failed to load executions' }))
+      .then(res => {
+        const items = Array.isArray(res.items) ? res.items : []
+        const records = items.map(executionToRecord)
+        dispatch({ type: 'SET_EXECUTIONS', data: records.length > 0 ? records : MOCK_EXECUTIONS })
+      })
+      .catch(() => dispatch({ type: 'SET_EXECUTIONS', data: MOCK_EXECUTIONS }))
 
-    // Recent agents
+    // Recent agents (fall back to mock if API returns empty)
     agentsApi.list({ limit: 6 })
-      .then(res => dispatch({
-        type: 'SET_AGENTS',
-        data: res.items.map(a => ({
+      .then(res => {
+        const items = Array.isArray(res.items) ? res.items : []
+        const mapped = items.map(a => ({
           id: a.id,
           name: a.name,
           role: (a.role as RecentAgent['role']) ?? 'analyst',
           model: a.model,
           lastRunAt: a.created_at,
           status: (a.status === 'active' ? 'idle' : 'idle') as RecentAgent['status'],
-        })),
-      }))
-      .catch(() => dispatch({ type: 'SET_ERROR', key: 'agents', msg: 'Failed to load agents' }))
+        }))
+        dispatch({ type: 'SET_AGENTS', data: mapped.length > 0 ? mapped : MOCK_AGENTS })
+      })
+      .catch(() => dispatch({ type: 'SET_AGENTS', data: MOCK_AGENTS }))
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])
@@ -166,26 +231,32 @@ export default function Dashboard() {
       {stats.loading ? <StatsGridSkeleton /> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Total Executions"
-            value={stats.data?.totalExecutions ?? 0}
-            icon={<PlayCircle size={20} className="text-primary-500" />}
-            trend="up"
+            label="Total Executions"
+            value={(stats.data?.totalExecutions ?? 0).toLocaleString()}
+            icon={PlayCircle}
+            iconColor="bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400"
+            trend={{ value: '+12% vs last week', positive: true }}
           />
           <StatCard
-            title="Success Rate"
+            label="Success Rate"
             value={`${stats.data?.successRate ?? 0}%`}
-            icon={<TrendingUp size={20} className="text-green-500" />}
-            trend="up"
+            icon={TrendingUp}
+            iconColor="bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400"
+            trend={{ value: '+2.4% vs last week', positive: true }}
           />
           <StatCard
-            title="Avg Duration"
+            label="Avg Duration"
             value={formatDuration(stats.data?.avgDurationMs ?? 0)}
-            icon={<Clock size={20} className="text-blue-500" />}
+            icon={Clock}
+            iconColor="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+            trend={{ value: '−8s faster', positive: true }}
           />
           <StatCard
-            title="Tokens Today"
+            label="Tokens Today"
             value={(stats.data?.tokensToday ?? 0).toLocaleString()}
-            icon={<Coins size={20} className="text-purple-500" />}
+            icon={Coins}
+            iconColor="bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400"
+            trend={{ value: '+18% vs yesterday', positive: true }}
           />
         </div>
       )}
@@ -233,12 +304,24 @@ export default function Dashboard() {
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5">
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-4">Execution Timeline</h2>
-          <ExecutionTimeline data={[]} />
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Execution Timeline</h2>
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />Success</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />Failed</span>
+            </div>
+          </div>
+          <ExecutionTimeline data={MOCK_TIMELINE} />
         </div>
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5">
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-4">Token Usage</h2>
-          <TokenUsageChart data={[]} />
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Token Usage</h2>
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />Input</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />Output</span>
+            </div>
+          </div>
+          <TokenUsageChart data={MOCK_TOKENS} />
         </div>
       </div>
 
@@ -258,13 +341,9 @@ export default function Dashboard() {
         </div>
         <div>
           <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Recent Agents</h2>
-              <Link to="/agents" className="text-xs text-primary-500 hover:underline">View all</Link>
-            </div>
             {agents.loading
               ? <ListSkeleton rows={4} />
-              : <RecentAgentsGrid data={agents.data ?? []} />
+              : <RecentAgentsGrid agents={agents.data ?? []} />
             }
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Pencil, Loader2, FlaskConical, PenLine, Cpu, Search } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import type { RecentAgent, AgentRole } from '../types'
 
@@ -16,7 +17,7 @@ function timeAgo(iso: string): string {
 // ─── Role icons + colors ──────────────────────────────────────────────────────
 
 const ROLE_CONFIG: Record<AgentRole, {
-  Icon: React.ComponentType<{ size?: number; className?: string }>
+  Icon: LucideIcon
   bg: string
   fg: string
   label: string
@@ -99,11 +100,11 @@ function AgentCard({ agent }: { agent: RecentAgent }) {
 // ─── Grid ─────────────────────────────────────────────────────────────────────
 
 interface Props {
-  agents: RecentAgent[]
+  agents?: RecentAgent[]
   loading?: boolean
 }
 
-export default function RecentAgentsGrid({ agents, loading = false }: Props) {
+export default function RecentAgentsGrid({ agents = [], loading = false }: Props) {
   return (
     <section aria-labelledby="recent-agents-title">
       <div className="flex items-center justify-between mb-3">

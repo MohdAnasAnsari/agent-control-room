@@ -34,19 +34,18 @@ from __future__ import annotations
 import json
 import pathlib
 from typing import Any, Dict, List, Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.deps import get_current_user
 from app.core.errors import not_found
+from app.models.database import User
 from app.models.db_session import get_db
 from app.models.schemas import AgentCreate, WorkflowCreate
 from app.services import agent_service, workflow_service
 
 router = APIRouter(prefix="/templates", tags=["templates"])
-
-_STUB_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 
@@ -153,6 +152,7 @@ async def get_agent_template(template_id: str) -> Dict[str, Any]:
 async def clone_agent_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     template = _find_template(_get_agent_templates(), template_id)
     if not template:
@@ -173,7 +173,7 @@ async def clone_agent_template(
             detail={"code": "TEMPLATE_INVALID", "message": str(exc)},
         )
 
-    agent = await agent_service.create_agent(db, _STUB_USER_ID, payload)
+    agent = await agent_service.create_agent(db, current_user.id, payload)
 
     return {
         "id": str(agent.id),
@@ -250,6 +250,7 @@ async def get_workflow_template(template_id: str) -> Dict[str, Any]:
 async def clone_workflow_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     template = _find_template(_get_workflow_templates(), template_id)
     if not template:
@@ -275,7 +276,7 @@ async def clone_workflow_template(
             detail={"code": "TEMPLATE_INVALID", "message": str(exc)},
         )
 
-    workflow = await workflow_service.create_workflow(db, _STUB_USER_ID, payload)
+    workflow = await workflow_service.create_workflow(db, current_user.id, payload)
 
     return {
         "id": str(workflow.id),

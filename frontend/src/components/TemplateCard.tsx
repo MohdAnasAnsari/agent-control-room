@@ -53,10 +53,15 @@ function MiniDag({ nodeCount }: { nodeCount: number }) {
 
 function AgentPreview({ tools }: { tools: string[] }) {
   const shown = tools.slice(0, 4)
-  const toolColours = ['bg-blue-100', 'bg-green-100', 'bg-purple-100', 'bg-amber-100']
+  const toolColours = [
+    'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
+    'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300',
+    'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300',
+    'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+  ]
   return (
     <div className="flex items-center justify-center gap-2 py-2">
-      <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/40 border-2 border-primary-200 dark:border-primary-700 flex items-center justify-center">
+      <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/40 border-2 border-primary-200 dark:border-primary-700 flex items-center justify-center shrink-0">
         <Bot size={18} className="text-primary-500" />
       </div>
       {shown.length > 0 && (
@@ -65,12 +70,11 @@ function AgentPreview({ tools }: { tools: string[] }) {
             <span
               key={tool}
               className={clsx(
-                'text-xs px-1.5 py-0.5 rounded font-mono',
+                'text-[11px] px-1.5 py-0.5 rounded font-mono font-medium',
                 toolColours[i % toolColours.length],
-                'dark:opacity-70'
               )}
             >
-              {tool.replace('_', ' ')}
+              {tool.replace(/_/g, ' ')}
             </span>
           ))}
         </div>
