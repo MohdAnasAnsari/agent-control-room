@@ -1,0 +1,863 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CI/CD Pipeline — Multi-Agent Orchestrator
+#
+# Triggers:
+#   push to main  → full pipeline (test → lint → security → build → deploy)
+#   pull_request  → test + lint + security only (no build/deploy)
+#
+# Required GitHub Secrets:
+#   DOCKER_REGISTRY_URL     e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com
+#   DOCKER_USERNAME         registry username (or AWS access key for ECR)
+#   DOCKER_PASSWORD         registry password / token
+#   AWS_ACCESS_KEY_ID       for EKS kubeconfig + ECR login
+#   AWS_SECRET_ACCESS_KEY
+#   AWS_REGION              e.g. us-east-1
+#   EKS_CLUSTER_NAME        name of the EKS cluster
+#   SLACK_WEBHOOK_URL       incoming webhook for deployment notifications
+#   PROD_DATABASE_URL       used by smoke-test runner (optional)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+# Cancel in-progress runs for the same branch/PR to save CI minutes.
+# main branch runs are never cancelled so deploys always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+  BACKEND_IMAGE: ${{ secrets.DOCKER_REGISTRY_URL }}/orchestrator-backend
+  FRONTEND_IMAGE: ${{ secrets.DOCKER_REGISTRY_URL }}/orchestrator-frontend
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 1 — Backend Unit + Integration Tests
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  test-backend:
+    name: "Backend Tests (pytest ≥80% coverage)"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orchestrator
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: orchestrator_test
+        options: >-
+          --health-cmd "pg_isready -U orchestrator"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        working-directory: backend
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Install pytest-cov
+        run: pip install pytest-cov==6.0.0
+
+      - name: Wait for services to be ready
+        run: |
+          until pg_isready -h localhost -p 5432 -U orchestrator; do sleep 1; done
+          until redis-cli -h localhost ping | grep -q PONG; do sleep 1; done
+
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://orchestrator:testpass@localhost:5432/orchestrator_test
+        run: alembic upgrade head
+
+      - name: Run tests with coverage
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://orchestrator:testpass@localhost:5432/orchestrator_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key-exactly-32-chars-min
+          ENCRYPTION_KEY: ci-test-encryption-key-32-chars-min
+          ANTHROPIC_API_KEY: ""
+          OPENAI_API_KEY: ""
+          GROQ_API_KEY: ""
+          DEBUG: "true"
+          ENVIRONMENT: test
+          RATE_LIMIT_ENABLED: "false"
+          ENFORCE_HTTPS: "false"
+        run: |
+          pytest tests/ \
+            --cov=app \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:coverage-html \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            -v \
+            --tb=short \
+            --junitxml=test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: |
+            backend/test-results.xml
+            backend/coverage.xml
+            backend/coverage-html/
+          retention-days: 14
+
+      - name: Annotate PR with test summary
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend Test Results
+          path: backend/test-results.xml
+          reporter: java-junit
+          fail-on-error: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 2 — Frontend Unit Tests
+# ─────────────────────────────────────────────────────────────────────────────
+  test-frontend:
+    name: "Frontend Tests (Vitest)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run tests with coverage
+        working-directory: frontend
+        run: npm run test:ci
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 14
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 3 — Lint (Python + TypeScript)
+# ─────────────────────────────────────────────────────────────────────────────
+  lint:
+    name: "Lint (flake8 + black + eslint)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Python linters ────────────────────────────────────────────────────
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python linters
+        run: pip install flake8==7.1.1 black==24.10.0
+
+      - name: flake8 — style + error check
+        working-directory: backend
+        run: |
+          flake8 app/ tests/ \
+            --max-line-length=100 \
+            --extend-ignore=E203,W503 \
+            --statistics \
+            --count
+
+      - name: black — format check
+        working-directory: backend
+        run: black --check --diff app/ tests/
+
+      # ── TypeScript / ESLint ───────────────────────────────────────────────
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: ESLint
+        working-directory: frontend
+        run: npm run lint
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 4 — Security Scan
+# ─────────────────────────────────────────────────────────────────────────────
+  security-scan:
+    name: "Security Scan (bandit + npm audit + Trivy)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Python: bandit ────────────────────────────────────────────────────
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install bandit
+        run: pip install bandit[toml]==1.8.0
+
+      - name: bandit — Python security analysis
+        working-directory: backend
+        run: |
+          bandit -r app/ \
+            --severity-level medium \
+            --confidence-level medium \
+            --format json \
+            --output bandit-report.json || true
+          bandit -r app/ \
+            --severity-level medium \
+            --confidence-level medium
+
+      - name: Upload bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: backend/bandit-report.json
+          retention-days: 14
+
+      # ── Node.js: npm audit ────────────────────────────────────────────────
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm audit — dependency vulnerability check
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      # ── Container: Trivy (runs on built image) ────────────────────────────
+      - name: Build backend image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          dockerfile: ./backend/Dockerfile
+          push: false
+          tags: orchestrator-backend:scan
+          load: true
+
+      - name: Trivy — container vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: orchestrator-backend:scan
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF report
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 5 — Build & Push Docker Images
+# Runs on every push/PR after tests pass; push only if tests pass
+# ─────────────────────────────────────────────────────────────────────────────
+  build-and-push:
+    name: "Build & Push Docker Images"
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend, lint, security-scan]
+
+    outputs:
+      image-sha: ${{ github.sha }}
+      backend-digest: ${{ steps.push-backend.outputs.digest }}
+      frontend-digest: ${{ steps.push-frontend.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+
+      - name: Log in to Docker registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY_URL }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # ── Backend metadata & build ──────────────────────────────────────────
+      - name: Docker metadata — backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=sha,prefix=,format=long
+            type=ref,event=branch
+            type=ref,event=pr
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.title=orchestrator-backend
+            org.opencontainers.image.description=Multi-Agent Orchestrator Backend
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and push backend image
+        id: push-backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          dockerfile: ./backend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.BACKEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.BACKEND_IMAGE }}:buildcache,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            GIT_SHA=${{ github.sha }}
+            GIT_REF=${{ github.ref_name }}
+
+      # ── Frontend metadata & build ─────────────────────────────────────────
+      - name: Docker metadata — frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=sha,prefix=,format=long
+            type=ref,event=branch
+            type=ref,event=pr
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push frontend image
+        id: push-frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          dockerfile: ./frontend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.FRONTEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.FRONTEND_IMAGE }}:buildcache,mode=max
+
+      - name: Image summary
+        run: |
+          echo "## Docker Images Built" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | SHA | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| backend | ${{ github.sha }} | ${{ steps.push-backend.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| frontend | ${{ github.sha }} | ${{ steps.push-frontend.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 5b — End-to-End Tests (Playwright against docker-compose stack)
+# Runs after images are built; acts as the final integration gate before deploy.
+# Timeout: 10 minutes per test (matching spec requirement).
+# ─────────────────────────────────────────────────────────────────────────────
+  e2e-tests:
+    name: "E2E Tests (Playwright)"
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (pull images from ECR)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Override images in docker-compose with freshly built tags
+        run: |
+          # Use the just-pushed images so E2E tests run against real build
+          cat > .env.e2e <<EOF
+          BACKEND_IMAGE=${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          FRONTEND_IMAGE=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          EOF
+
+      - name: Start full stack
+        run: |
+          docker compose -f docker-compose.yml up -d
+          # Give services 60 s to become healthy
+          sleep 60
+          docker compose ps
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: e2e/package.json
+
+      - name: Install Playwright + browsers
+        working-directory: e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E tests
+        working-directory: e2e
+        timeout-minutes: 10
+        env:
+          BASE_URL: http://localhost:3000
+          BACKEND_URL: http://localhost:8000
+          CI: "true"
+        run: npx playwright test --timeout=30000
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 14
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 6 — Deploy to Production
+# Only runs on push to main; requires manual approval via GitHub environment
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: "Deploy to Production"
+    runs-on: ubuntu-latest
+    needs: [build-and-push, e2e-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    # The 'production' environment can be configured in GitHub Settings →
+    # Environments with required reviewers for manual approval before deploy.
+    environment:
+      name: production
+      url: ${{ steps.get-url.outputs.service_url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Notify deployment start (Slack)
+        uses: slackapi/slack-github-action@v2
+        with:
+          payload: |
+            {
+              "text": ":rocket: *Deploying* `${{ github.repository }}` to *production*",
+              "attachments": [{
+                "color": "warning",
+                "fields": [
+                  { "title": "Commit", "value": "<${{ github.event.head_commit.url }}|${{ github.sha }}>" },
+                  { "title": "Message", "value": "${{ github.event.head_commit.message }}" },
+                  { "title": "Author", "value": "${{ github.actor }}" },
+                  { "title": "Run", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View>" }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update kubeconfig (AWS EKS)
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ secrets.EKS_CLUSTER_NAME }} \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Ensure orchestrator namespace exists
+        run: |
+          kubectl get namespace orchestrator 2>/dev/null || \
+            kubectl create namespace orchestrator
+
+      - name: Record current image (for rollback reference)
+        id: current-image
+        run: |
+          CURRENT=$(kubectl get deployment orchestrator-backend \
+            -n orchestrator \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")
+          echo "image=${CURRENT}" >> $GITHUB_OUTPUT
+          echo "Previous image: ${CURRENT}"
+
+      - name: Patch image tags in K8s manifests
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+          sed -i \
+            "s|orchestrator-backend:latest|${{ env.BACKEND_IMAGE }}:${IMAGE_TAG}|g" \
+            k8s/deployment.yaml
+          sed -i \
+            "s|orchestrator-frontend:latest|${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG}|g" \
+            k8s/deployment.yaml
+          echo "Updated deployment.yaml with tag: ${IMAGE_TAG}"
+          grep "image:" k8s/deployment.yaml
+
+      - name: Apply ConfigMap (non-secret config)
+        run: kubectl apply -f k8s/configmap.yaml
+
+      - name: Apply deployment + service
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+
+      - name: Wait for rolling update to complete
+        run: |
+          kubectl rollout status deployment/orchestrator-backend \
+            -n orchestrator \
+            --timeout=300s
+
+      - name: Verify pod readiness
+        run: |
+          kubectl wait pod \
+            -l app=orchestrator-backend \
+            -n orchestrator \
+            --for=condition=Ready \
+            --timeout=120s
+          echo "── Pod status ──────────────────────────"
+          kubectl get pods -n orchestrator -l app=orchestrator-backend
+
+      - name: Get service URL
+        id: get-url
+        run: |
+          # Wait for LoadBalancer to assign hostname
+          for i in $(seq 1 30); do
+            HOSTNAME=$(kubectl get svc orchestrator-backend -n orchestrator \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+            [ -n "$HOSTNAME" ] && break
+            echo "Waiting for LoadBalancer hostname... ($i/30)"
+            sleep 10
+          done
+          echo "service_url=http://${HOSTNAME}" >> $GITHUB_OUTPUT
+          echo "Service URL: http://${HOSTNAME}"
+
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image tag | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Previous image | \`${{ steps.current-image.outputs.image }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Service URL | ${{ steps.get-url.outputs.service_url }} |" >> $GITHUB_STEP_SUMMARY
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 7 — Smoke Test & Post-Deploy Monitoring (10 minutes)
+# ─────────────────────────────────────────────────────────────────────────────
+  smoke-test:
+    name: "Smoke Test + 10-min Monitoring"
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ secrets.EKS_CLUSTER_NAME }} \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Resolve service URL
+        id: svc
+        run: |
+          HOSTNAME=$(kubectl get svc orchestrator-backend -n orchestrator \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "url=http://${HOSTNAME}" >> $GITHUB_OUTPUT
+
+      - name: Initial /health check
+        run: |
+          URL="${{ steps.svc.outputs.url }}"
+          echo "Testing ${URL}/health ..."
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${URL}/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✓ /health returned 200"
+              break
+            fi
+            echo "  Attempt ${i}: got ${STATUS}, retrying in 10s..."
+            sleep 10
+            if [ "$i" = "10" ]; then
+              echo "Initial health check failed after 100s"
+              exit 1
+            fi
+          done
+
+      - name: Monitor deployment for 10 minutes
+        run: |
+          URL="${{ steps.svc.outputs.url }}"
+          echo "Monitoring ${URL} for 10 minutes (thresholds: error_rate<1%, p95<2s)"
+          END_TIME=$((SECONDS + 600))
+          TOTAL=0
+          ERRORS=0
+          CONSECUTIVE_FAILURES=0
+
+          while [ $SECONDS -lt $END_TIME ]; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 5 "${URL}/health" || echo "000")
+            TOTAL=$((TOTAL + 1))
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              CONSECUTIVE_FAILURES=0
+              echo "✓ [$(date -u +%H:%M:%S)] /health OK (total=${TOTAL} errors=${ERRORS})"
+            else
+              ERRORS=$((ERRORS + 1))
+              CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+              echo "✗ [$(date -u +%H:%M:%S)] /health returned ${HTTP_CODE} (errors=${ERRORS}/${TOTAL})"
+
+              # 3 consecutive failures → immediate rollback trigger
+              if [ "$CONSECUTIVE_FAILURES" -ge 3 ]; then
+                ERROR_RATE=$(echo "scale=2; $ERRORS * 100 / $TOTAL" | bc)
+                echo "3 consecutive failures (error_rate=${ERROR_RATE}%) — failing job to trigger rollback"
+                exit 1
+              fi
+            fi
+
+            # Check rolling error rate every 20 checks
+            if [ $((TOTAL % 20)) -eq 0 ] && [ $TOTAL -gt 0 ]; then
+              ERROR_RATE=$(echo "scale=2; $ERRORS * 100 / $TOTAL" | bc)
+              echo "── Health check: error_rate=${ERROR_RATE}% (${ERRORS}/${TOTAL}) ──"
+              # Fail if error rate exceeds 1%
+              if [ "$(echo "$ERROR_RATE > 1" | bc)" = "1" ]; then
+                echo "Error rate ${ERROR_RATE}% exceeds 1% threshold — triggering rollback"
+                exit 1
+              fi
+            fi
+            sleep 30
+          done
+
+          FINAL_RATE=$(echo "scale=2; $ERRORS * 100 / $TOTAL" | bc)
+          echo ""
+          echo "═══════════════════════════════════════════"
+          echo "  Monitoring complete: ${TOTAL} checks, ${ERRORS} errors (${FINAL_RATE}%)"
+          echo "  Deployment is healthy ✓"
+          echo "═══════════════════════════════════════════"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 8 — Automatic Rollback
+# Triggered only if deploy or smoke-test failed on main
+# ─────────────────────────────────────────────────────────────────────────────
+  rollback:
+    name: "Automatic Rollback"
+    runs-on: ubuntu-latest
+    needs: [deploy, smoke-test]
+    if: >
+      failure() &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      (needs.deploy.result == 'failure' || needs.smoke-test.result == 'failure')
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ secrets.EKS_CLUSTER_NAME }} \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Collect pre-rollback logs
+        run: |
+          echo "── Current pod status ──────────────────────"
+          kubectl get pods -n orchestrator -l app=orchestrator-backend || true
+          echo ""
+          echo "── Last 100 log lines (current version) ────"
+          kubectl logs \
+            -l app=orchestrator-backend \
+            -n orchestrator \
+            --tail=100 \
+            --previous 2>/dev/null || \
+          kubectl logs \
+            -l app=orchestrator-backend \
+            -n orchestrator \
+            --tail=100 || true
+
+      - name: Roll back deployment
+        run: |
+          echo "Rolling back orchestrator-backend to previous version..."
+          kubectl rollout undo deployment/orchestrator-backend -n orchestrator
+          kubectl rollout status deployment/orchestrator-backend \
+            -n orchestrator \
+            --timeout=180s
+
+      - name: Verify rollback health
+        run: |
+          HOSTNAME=$(kubectl get svc orchestrator-backend -n orchestrator \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          URL="http://${HOSTNAME}"
+
+          sleep 15
+          for i in $(seq 1 5); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${URL}/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✓ Rollback verified — /health returned 200"
+              exit 0
+            fi
+            echo "  Attempt ${i}: got ${STATUS}"
+            sleep 10
+          done
+          echo "Rollback health check failed — manual intervention required"
+          exit 1
+
+      - name: Notify rollback via Slack
+        if: always()
+        uses: slackapi/slack-github-action@v2
+        with:
+          payload: |
+            {
+              "text": ":rotating_light: *AUTOMATIC ROLLBACK* executed for `${{ github.repository }}`",
+              "attachments": [{
+                "color": "danger",
+                "fields": [
+                  { "title": "Failed commit", "value": "<${{ github.event.head_commit.url }}|${{ github.sha }}>" },
+                  { "title": "Reason", "value": "deploy=${{ needs.deploy.result }}, smoke-test=${{ needs.smoke-test.result }}" },
+                  { "title": "Action required", "value": "Previous version restored. Investigate before re-deploying." },
+                  { "title": "Run logs", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View>" }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 9 — Final Notification
+# ─────────────────────────────────────────────────────────────────────────────
+  notify:
+    name: "Deployment Notification"
+    runs-on: ubuntu-latest
+    needs: [deploy, smoke-test, rollback]
+    if: >
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+
+    steps:
+      - name: Notify success
+        if: needs.smoke-test.result == 'success'
+        uses: slackapi/slack-github-action@v2
+        with:
+          payload: |
+            {
+              "text": ":white_check_mark: *Deployment successful* — `${{ github.repository }}`",
+              "attachments": [{
+                "color": "good",
+                "fields": [
+                  { "title": "Version", "value": "\`${{ github.sha }}\`" },
+                  { "title": "Deployed by", "value": "${{ github.actor }}" },
+                  { "title": "Message", "value": "${{ github.event.head_commit.message }}" },
+                  { "title": "Run", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>" }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Notify failure (no rollback)
+        if: |
+          needs.deploy.result == 'failure' ||
+          (needs.smoke-test.result == 'failure' && needs.rollback.result != 'success')
+        uses: slackapi/slack-github-action@v2
+        with:
+          payload: |
+            {
+              "text": ":x: *Deployment FAILED* — `${{ github.repository }}`",
+              "attachments": [{
+                "color": "danger",
+                "fields": [
+                  { "title": "Version", "value": "\`${{ github.sha }}\`" },
+                  { "title": "deploy", "value": "${{ needs.deploy.result }}" },
+                  { "title": "smoke-test", "value": "${{ needs.smoke-test.result }}" },
+                  { "title": "rollback", "value": "${{ needs.rollback.result }}" },
+                  { "title": "Logs", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View error logs>" }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

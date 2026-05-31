@@ -1,0 +1,36 @@
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Pydantic / settings
+pydantic==2.10.3
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+# Security
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+cryptography==43.0.3
+
+# AI providers
+anthropic==0.40.0
+openai==1.57.4
+groq==0.13.0
+
+# Redis (distributed rate limiting; falls back to in-memory if unavailable)
+redis>=5.0.0
+
+# Observability
+sentry-sdk[fastapi]==2.19.2
+prometheus-client==0.21.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1
+aiosqlite==0.20.0

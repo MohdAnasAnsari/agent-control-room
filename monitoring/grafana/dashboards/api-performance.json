@@ -1,0 +1,113 @@
+{
+  "title": "Orchestrator — API Performance",
+  "uid": "orchestrator-api-perf",
+  "description": "Per-endpoint latency, throughput, and error breakdown.",
+  "tags": ["orchestrator", "api"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "endpoint",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(http_requests_total, endpoint)",
+        "query": "label_values(http_requests_total, endpoint)",
+        "multi": true,
+        "includeAll": true,
+        "label": "Endpoint"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Top Endpoints by Request Rate",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "options": { "sortBy": [{ "displayName": "req/s", "desc": true }] },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "topk(10, sum(rate(http_requests_total[5m])) by (endpoint, method))",
+          "instant": true,
+          "legendFormat": "{{endpoint}} {{method}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        { "id": "labelsToFields", "options": {} },
+        { "id": "organize", "options": { "renameByName": { "Value": "req/s" } } }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Slowest Endpoints (p95, 5m)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "options": { "sortBy": [{ "displayName": "p95 (s)", "desc": true }] },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "topk(10, histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)))",
+          "instant": true,
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        { "id": "labelsToFields", "options": {} },
+        { "id": "organize", "options": { "renameByName": { "Value": "p95 (s)" } } }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Latency p50 / p95 / p99 — $endpoint",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "right" } },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 5 } } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{endpoint=~\"$endpoint\"}[5m])) by (le, endpoint))", "legendFormat": "p50 {{endpoint}}", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{endpoint=~\"$endpoint\"}[5m])) by (le, endpoint))", "legendFormat": "p95 {{endpoint}}", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{endpoint=~\"$endpoint\"}[5m])) by (le, endpoint))", "legendFormat": "p99 {{endpoint}}", "refId": "C" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Error Rate by Endpoint",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 16 },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "custom": { "fillOpacity": 10 } } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(http_requests_total{status_code=~\"5..\", endpoint=~\"$endpoint\"}[5m])) by (endpoint) / sum(rate(http_requests_total{endpoint=~\"$endpoint\"}[5m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Request Volume by Endpoint",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(http_requests_total{endpoint=~\"$endpoint\"}[1m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

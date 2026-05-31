@@ -1,0 +1,259 @@
+[
+  {
+    "id": "workflow_sales_pipeline",
+    "name": "Sales Pipeline Automation",
+    "description": "End-to-end lead-to-deal workflow: discovers prospects, enriches data, personalizes outreach, and logs activity to CRM. Handles follow-ups and escalates hot leads to human reps.",
+    "category": "Sales",
+    "tags": ["sales", "leads", "outreach", "CRM", "automation"],
+    "dag_config": {
+      "nodes": [
+        {
+          "id": "lead_discovery",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_lead_generator",
+          "label": "Lead Discovery",
+          "depends_on": [],
+          "timeout_s": 60
+        },
+        {
+          "id": "data_enrichment",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_data_analyst",
+          "label": "Data Enrichment",
+          "depends_on": ["lead_discovery"],
+          "timeout_s": 45
+        },
+        {
+          "id": "quality_check",
+          "type": "condition",
+          "condition": "output.score > 7",
+          "label": "Quality Check",
+          "depends_on": ["data_enrichment"],
+          "true_branch": "personalized_outreach",
+          "false_branch": "nurture_sequence"
+        },
+        {
+          "id": "personalized_outreach",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_email_responder",
+          "label": "Personalized Outreach",
+          "depends_on": ["quality_check"],
+          "timeout_s": 30
+        },
+        {
+          "id": "nurture_sequence",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_content_writer",
+          "label": "Nurture Sequence",
+          "depends_on": ["quality_check"],
+          "timeout_s": 30
+        }
+      ]
+    },
+    "node_count": 5,
+    "popularity": 89,
+    "clone_count": 89,
+    "rating": 4.7,
+    "rating_count": 18,
+    "estimated_duration_s": 180
+  },
+  {
+    "id": "workflow_content_creation",
+    "name": "Content Creation Pipeline",
+    "description": "Research → Outline → Draft → Review → Publish. Creates SEO-optimized blog posts, distributes to social channels, and reports performance metrics. Cuts content creation time by 70%.",
+    "category": "Content",
+    "tags": ["content", "blog", "SEO", "social-media", "marketing"],
+    "dag_config": {
+      "nodes": [
+        {
+          "id": "topic_research",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_data_analyst",
+          "label": "Topic Research",
+          "depends_on": [],
+          "timeout_s": 45
+        },
+        {
+          "id": "outline_generation",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_content_writer",
+          "label": "Outline Generation",
+          "depends_on": ["topic_research"],
+          "timeout_s": 30
+        },
+        {
+          "id": "draft_writing",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_content_writer",
+          "label": "Draft Writing",
+          "depends_on": ["outline_generation"],
+          "timeout_s": 90
+        },
+        {
+          "id": "seo_review",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_data_analyst",
+          "label": "SEO Review",
+          "depends_on": ["draft_writing"],
+          "timeout_s": 30
+        },
+        {
+          "id": "social_distribution",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_content_writer",
+          "label": "Social Distribution",
+          "depends_on": ["seo_review"],
+          "timeout_s": 30
+        }
+      ]
+    },
+    "node_count": 5,
+    "popularity": 124,
+    "clone_count": 124,
+    "rating": 4.8,
+    "rating_count": 29,
+    "estimated_duration_s": 240
+  },
+  {
+    "id": "workflow_customer_support",
+    "name": "Customer Support Triage",
+    "description": "Automatically classifies incoming support tickets, resolves tier-1 issues instantly, escalates complex cases to the right team, and tracks SLAs. Reduces first-response time by 85%.",
+    "category": "Support",
+    "tags": ["support", "triage", "escalation", "SLA", "helpdesk"],
+    "dag_config": {
+      "nodes": [
+        {
+          "id": "ticket_triage",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_customer_support",
+          "label": "Ticket Triage",
+          "depends_on": [],
+          "timeout_s": 15
+        },
+        {
+          "id": "urgency_check",
+          "type": "condition",
+          "condition": "output.urgency >= 4",
+          "label": "Urgency Check",
+          "depends_on": ["ticket_triage"],
+          "true_branch": "immediate_escalation",
+          "false_branch": "auto_response"
+        },
+        {
+          "id": "auto_response",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_customer_support",
+          "label": "Auto Response",
+          "depends_on": ["urgency_check"],
+          "timeout_s": 20
+        },
+        {
+          "id": "immediate_escalation",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_email_responder",
+          "label": "Escalation",
+          "depends_on": ["urgency_check"],
+          "timeout_s": 15
+        },
+        {
+          "id": "sla_logging",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_data_analyst",
+          "label": "SLA Logging",
+          "depends_on": ["auto_response", "immediate_escalation"],
+          "timeout_s": 10
+        }
+      ]
+    },
+    "node_count": 5,
+    "popularity": 156,
+    "clone_count": 156,
+    "rating": 4.9,
+    "rating_count": 37,
+    "estimated_duration_s": 60
+  },
+  {
+    "id": "workflow_data_pipeline",
+    "name": "Data Pipeline (ETL + Report)",
+    "description": "Extract from multiple sources, transform and validate data quality, load to warehouse, then generate executive dashboards automatically. Runs on schedule or on-demand.",
+    "category": "Analytics",
+    "tags": ["ETL", "data", "warehouse", "reporting", "automation"],
+    "dag_config": {
+      "nodes": [
+        {
+          "id": "data_extraction",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_data_analyst",
+          "label": "Data Extraction",
+          "depends_on": [],
+          "timeout_s": 120
+        },
+        {
+          "id": "data_transformation",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_data_analyst",
+          "label": "Transform & Validate",
+          "depends_on": ["data_extraction"],
+          "timeout_s": 60
+        },
+        {
+          "id": "quality_gate",
+          "type": "condition",
+          "condition": "output.error_rate < 0.01",
+          "label": "Quality Gate",
+          "depends_on": ["data_transformation"],
+          "true_branch": "data_load",
+          "false_branch": "alert_team"
+        },
+        {
+          "id": "data_load",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_data_analyst",
+          "label": "Load to Warehouse",
+          "depends_on": ["quality_gate"],
+          "timeout_s": 60
+        },
+        {
+          "id": "alert_team",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_email_responder",
+          "label": "Alert on Failure",
+          "depends_on": ["quality_gate"],
+          "timeout_s": 10
+        },
+        {
+          "id": "report_generation",
+          "type": "agent",
+          "agent_id": null,
+          "agent_template_id": "agent_data_analyst",
+          "label": "Generate Report",
+          "depends_on": ["data_load"],
+          "timeout_s": 45
+        }
+      ]
+    },
+    "node_count": 6,
+    "popularity": 78,
+    "clone_count": 78,
+    "rating": 4.6,
+    "rating_count": 12,
+    "estimated_duration_s": 300
+  }
+]

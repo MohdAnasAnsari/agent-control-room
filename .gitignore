@@ -1,0 +1,33 @@
+# Local overrides with real credentials — never commit these
+.env.local
+.env.development
+.env.development.local
+.env.production
+.env.production.local
+.env.staging.local
+
+# OS / editor artefacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.swp
+
+# Docker build cache
+.dockerignore
+
+# Terraform — never commit state or override files
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/override.tf
+terraform/override.tf.json
+terraform/*_override.tf
+terraform/*_override.tf.json
+
+# Terraform variable files with secrets (create locally from *.tfvars templates)
+terraform/*.tfvars.local
+
+# Deployment logs
+docs/deploy-history.log

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse -Directory)",
+      "Bash(Select-Object FullName)",
+      "Read(//c/Users/ADMIN/Desktop/Voqal and MultiAgent/Multi-Agent-Orchestrator/frontend/**)",
+      "PowerShell(Get-Command node, npm, pnpm, yarn -ErrorAction SilentlyContinue)",
+      "PowerShell($env:PATH = \"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\claude-cli-nodejs;\" + $env:PATH; node --version 2>&1)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\ADMIN\\\\Desktop\\\\Voqal and MultiAgent\\\\Multi-Agent-Orchestrator\\\\agent-control-room\" -Recurse)",
+      "Bash(ConvertTo-Csv -NoTypeInformation)",
+      "Read(//c/Users/ADMIN/.claude/projects/c--Users-ADMIN-Desktop-Voqal-and-MultiAgent-Multi-Agent-Orchestrator-agent-control-room/**)",
+      "Bash(Get-ChildItem -Recurse \"c:\\\\Users\\\\ADMIN\\\\Desktop\\\\Voqal and MultiAgent\\\\Multi-Agent-Orchestrator\\\\agent-control-room\\\\backend\" -Force)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\ADMIN\\\\Desktop\\\\Voqal and MultiAgent\\\\Multi-Agent-Orchestrator\\\\agent-control-room\" -Force)",
+      "Bash(Select-Object Name, Mode)",
+      "Bash(Format-Table -AutoSize)",
+      "PowerShell(tree /F \"c:\\\\Users\\\\ADMIN\\\\Desktop\\\\Voqal and MultiAgent\\\\Multi-Agent-Orchestrator\\\\agent-control-room\\\\backend\\\\app\" -L 3 2>$null)",
+      "PowerShell(head -80)",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\ADMIN\\\\Desktop\\\\Voqal and MultiAgent\\\\Multi-Agent-Orchestrator\\\\agent-control-room\\\\backend\" -Force | Where-Object { $_.Name -notmatch '__pycache__|\\\\.egg-info|\\\\.git' } | Select-Object Name, Mode | Format-Table -AutoSize)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\ADMIN\\.claude\\projects\\c--Users-ADMIN-Desktop-Voqal-and-MultiAgent-Multi-Agent-Orchestrator-agent-control-room\\memory"
+    ]
+  }
+}

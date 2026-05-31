@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator-backend
+  namespace: orchestrator
+  labels:
+    app: orchestrator-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orchestrator-backend
+  # Zero-downtime rolling update: bring up a new pod before taking down an old one
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: orchestrator-backend
+    spec:
+      # Match the uid/gid created in the Dockerfile (appuser = 999)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: backend
+          image: orchestrator-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          # Non-secret config from ConfigMap; secrets from Secret
+          envFrom:
+            - configMapRef:
+                name: orchestrator-config
+            - secretRef:
+                name: orchestrator-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # Readiness: stop sending traffic until the app is ready
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Liveness: restart the container if the app is stuck
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            # Filesystem is read-only; /tmp is writable via emptyDir volume
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Writable scratch space for the app (logs, temp files)
+        - name: tmp
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30

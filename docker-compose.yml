@@ -1,0 +1,103 @@
+version: "3.9"
+
+# ── Services ──────────────────────────────────────────────────────────────────
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: orchestrator
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: orchestrator_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orchestrator"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Redis (caching + rate limiting) ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── FastAPI backend ───────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount source for hot-reload in dev; venv stays inside the container at /opt/venv
+      - ./backend:/app
+    # Override CMD to enable --reload; ENTRYPOINT (entrypoint.sh) still runs migrations first
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - internal
+      - public
+    restart: unless-stopped
+
+  # ── React frontend ────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - public
+    restart: unless-stopped
+
+  # ── Adminer (DB admin UI) ─────────────────────────────────────────────────────
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+      - public
+    restart: unless-stopped
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  # Internal: postgres, redis, and backend communicate here (not exposed to host)
+  internal:
+    driver: bridge
+  # Public: frontend, backend, and adminer are reachable from the host
+  public:
+    driver: bridge
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:

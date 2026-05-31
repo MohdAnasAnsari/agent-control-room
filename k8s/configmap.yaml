@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestrator-config
+  namespace: orchestrator
+# Non-secret configuration — safe to store in version control.
+# Secrets (DATABASE_URL, API keys, SECRET_KEY) live in secret.yaml.
+data:
+  APP_NAME: "Multi-Agent Orchestrator"
+  ENVIRONMENT: "production"
+  DEBUG: "false"
+  LOG_LEVEL: "INFO"
+  ENFORCE_HTTPS: "true"
+  DEFAULT_MODEL: "claude-sonnet-4-6"
+  LLM_TIMEOUT_S: "30"
+  LLM_MAX_RETRIES: "3"
+  LLM_FALLBACK_ENABLED: "true"
+  DATABASE_POOL_SIZE: "10"
+  DATABASE_MAX_OVERFLOW: "20"
+  DATABASE_SSL_MODE: "require"
+  RATE_LIMIT_ENABLED: "true"
+  MAX_EXECUTION_TIME_S: "1800"
+  MAX_PARALLEL_NODES: "20"
+  AUDIT_LOG_RETENTION_DAYS: "365"
+  METRICS_RETENTION_DAYS: "90"

@@ -1,0 +1,618 @@
+{
+  "info": {
+    "name": "Multi-Agent Orchestrator API v1",
+    "_postman_id": "mao-api-v1-collection",
+    "description": "Complete REST API collection for Multi-Agent Orchestrator — Phase 3.1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "agent_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "workflow_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "execution_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Returns API status and version"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has status ok', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.equal('ok');",
+                  "  pm.expect(body.timestamp).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OpenAPI Docs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/docs",
+              "host": ["{{base_url}}"],
+              "path": ["docs"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Models",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/models",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "models"]
+            },
+            "description": "Returns available LLM models grouped by tier"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has production and testing tiers', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.production).to.be.an('array');",
+                  "  pm.expect(body.testing).to.be.an('array');",
+                  "  pm.expect(body.production).to.include('claude-sonnet-4-6');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/metrics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "metrics"]
+            },
+            "description": "Returns aggregated execution metrics"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Metrics shape', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('total_executions');",
+                  "  pm.expect(body).to.have.property('success_rate');",
+                  "  pm.expect(body).to.have.property('avg_duration_ms');",
+                  "  pm.expect(body).to.have.property('tokens_used_today');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Agents",
+      "item": [
+        {
+          "name": "Create Agent",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Research Agent\",\n  \"role\": \"researcher\",\n  \"system_prompt\": \"You are an expert research assistant. Analyze data and provide detailed summaries.\",\n  \"model\": \"claude-sonnet-4-6\",\n  \"tools\": [\"web_search\", \"calculator\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents"]
+            },
+            "description": "Create a new agent. name: 3-50 chars, system_prompt: 20-2000 chars"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Returns agent with id', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.id).to.be.a('string');",
+                  "  pm.expect(body.status).to.equal('active');",
+                  "  pm.collectionVariables.set('agent_id', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Agent — Validation Error (short name)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"AB\",\n  \"role\": \"analyst\",\n  \"system_prompt\": \"You are an expert research assistant for complex analysis tasks.\",\n  \"model\": \"claude-sonnet-4-6\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Standard error shape', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('error');",
+                  "  pm.expect(body.error.code).to.equal('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Agents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents?skip=0&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents"],
+              "query": [
+                {"key": "skip", "value": "0"},
+                {"key": "limit", "value": "10"},
+                {"key": "role", "value": "", "disabled": true},
+                {"key": "status", "value": "active", "disabled": true}
+              ]
+            },
+            "description": "Paginated agent list. Optional: role, status filters"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Pagination shape', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('total');",
+                  "  pm.expect(body).to.have.property('items');",
+                  "  pm.expect(body).to.have.property('has_more');",
+                  "});",
+                  "pm.test('X-Total-Count header', () => {",
+                  "  pm.expect(pm.response.headers.get('X-Total-Count')).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Agents (by role)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents?role=researcher",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents"],
+              "query": [{"key": "role", "value": "researcher"}]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Agent by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents/{{agent_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents", "{{agent_id}}"]
+            },
+            "description": "Returns agent details plus execution stats"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Includes stats', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('stats');",
+                  "  pm.expect(body.stats).to.have.property('total_executions');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Agent (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Research Agent\",\n  \"tools\": [\"web_search\", \"calculator\", \"file_reader\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents/{{agent_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents", "{{agent_id}}"]
+            },
+            "description": "Partial update — only provided fields are changed"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Agent (Soft)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents/{{agent_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents", "{{agent_id}}"]
+            },
+            "description": "Soft-delete: sets status=archived, returns 204"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Workflows",
+      "item": [
+        {
+          "name": "Create Workflow",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Research Pipeline\",\n  \"nodes\": [\n    {\n      \"id\": \"fetch\",\n      \"type\": \"agent\",\n      \"agent_id\": \"{{agent_id}}\",\n      \"depends_on\": []\n    },\n    {\n      \"id\": \"analyze\",\n      \"type\": \"agent\",\n      \"agent_id\": \"{{agent_id}}\",\n      \"depends_on\": [\"fetch\"]\n    }\n  ],\n  \"edges\": [\n    {\"source\": \"fetch\", \"target\": \"analyze\"}\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows"]
+            },
+            "description": "Creates a workflow. DAG is validated for cycles before saving."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Has workflow id', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.id).to.be.a('string');",
+                  "  pm.collectionVariables.set('workflow_id', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Workflow — Cyclic DAG (400)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cyclic Workflow\",\n  \"nodes\": [\n    {\"id\": \"a\", \"type\": \"agent\", \"agent_id\": \"x\", \"depends_on\": [\"b\"]},\n    {\"id\": \"b\", \"type\": \"agent\", \"agent_id\": \"y\", \"depends_on\": [\"a\"]}\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('INVALID_WORKFLOW code', () => {",
+                  "  pm.expect(pm.response.json().error.code).to.equal('INVALID_WORKFLOW');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Workflows",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows?skip=0&limit=10&is_active=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows"],
+              "query": [
+                {"key": "skip", "value": "0"},
+                {"key": "limit", "value": "10"},
+                {"key": "is_active", "value": "true"}
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Workflow by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "{{workflow_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Workflow (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Pipeline\",\n  \"is_active\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "{{workflow_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Execute Workflow (Async)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"input_data\": {\n    \"query\": \"Analyze recent AI papers\",\n    \"max_results\": 10\n  },\n  \"run_async\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}/execute",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "{{workflow_id}}", "execute"]
+            },
+            "description": "async=true → 202 with execution_id. async=false → 200 with full result."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202', () => pm.response.to.have.status(202));",
+                  "pm.test('Returns execution_id', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.execution_id).to.be.a('string');",
+                  "  pm.expect(body.status).to.equal('queued');",
+                  "  pm.collectionVariables.set('execution_id', body.execution_id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Execute Workflow (Sync)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"input_data\": {\"query\": \"Quick sync test\"},\n  \"run_async\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}/execute",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "{{workflow_id}}", "execute"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Workflow (Soft)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "{{workflow_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Executions",
+      "item": [
+        {
+          "name": "List Executions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions?skip=0&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "executions"],
+              "query": [
+                {"key": "skip", "value": "0"},
+                {"key": "limit", "value": "20"},
+                {"key": "status", "value": "completed", "disabled": true},
+                {"key": "workflow_id", "value": "{{workflow_id}}", "disabled": true}
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Execution by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions/{{execution_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "executions", "{{execution_id}}"]
+            },
+            "description": "Returns execution detail with all step inputs/outputs"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has steps array', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('steps');",
+                  "  pm.expect(body.steps).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stream Execution Logs (NDJSON)",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Accept", "value": "application/x-ndjson"}],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions/{{execution_id}}/logs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "executions", "{{execution_id}}", "logs"]
+            },
+            "description": "Returns newline-delimited JSON log events. Each line is a JSON object."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('NDJSON content type', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/x-ndjson');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Execution (Soft)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions/{{execution_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "executions", "{{execution_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

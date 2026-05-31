@@ -1,0 +1,234 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PR Test Workflow — runs on every pull request targeting main or develop.
+# Lighter than deploy.yml: tests + lint + security, no Docker build/push/deploy.
+# Fast feedback for reviewers.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: PR Tests
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-tests-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ── Backend Tests ──────────────────────────────────────────────────────────
+  test-backend:
+    name: "Backend (pytest ≥80% cov)"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orchestrator
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: orchestrator_test
+        options: >-
+          --health-cmd "pg_isready -U orchestrator"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies + pytest-cov
+        working-directory: backend
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          pip install pytest-cov==6.0.0
+
+      - name: Run migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://orchestrator:testpass@localhost:5432/orchestrator_test
+        run: alembic upgrade head
+
+      - name: pytest with coverage
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://orchestrator:testpass@localhost:5432/orchestrator_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key-exactly-32-chars-min
+          ENCRYPTION_KEY: ci-test-encryption-key-32-chars-min
+          ANTHROPIC_API_KEY: ""
+          OPENAI_API_KEY: ""
+          GROQ_API_KEY: ""
+          DEBUG: "true"
+          ENVIRONMENT: test
+          RATE_LIMIT_ENABLED: "false"
+          ENFORCE_HTTPS: "false"
+        run: |
+          pytest tests/ \
+            --cov=app \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            -v \
+            --tb=short \
+            --junitxml=test-results.xml
+
+      - name: Annotate PR
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend Test Results (PR)
+          path: backend/test-results.xml
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-backend-results-${{ github.run_number }}
+          path: |
+            backend/test-results.xml
+            backend/coverage.xml
+          retention-days: 7
+
+  # ── Frontend Tests ─────────────────────────────────────────────────────────
+  test-frontend:
+    name: "Frontend (Vitest)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: frontend
+        run: npm run test:ci
+
+  # ── Lint ───────────────────────────────────────────────────────────────────
+  lint:
+    name: "Lint"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install linters
+        run: pip install flake8==7.1.1 black==24.10.0
+
+      - name: flake8
+        working-directory: backend
+        run: flake8 app/ tests/ --max-line-length=100 --extend-ignore=E203,W503
+
+      - name: black --check
+        working-directory: backend
+        run: black --check --diff app/ tests/
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: eslint
+        working-directory: frontend
+        run: npm run lint
+
+  # ── Security ───────────────────────────────────────────────────────────────
+  security:
+    name: "Security (bandit + npm audit)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: bandit
+        run: |
+          pip install bandit[toml]==1.8.0
+          cd backend && bandit -r app/ --severity-level medium --confidence-level medium
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm audit
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
+  # ── PR Status Gate ─────────────────────────────────────────────────────────
+  # Single job that PRs must pass — add this as the required status check in
+  # GitHub branch protection rules (Settings → Branches → main → Required checks).
+  all-checks-pass:
+    name: "All PR Checks Passed"
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend, lint, security]
+    if: always()
+
+    steps:
+      - name: Evaluate results
+        run: |
+          if [[ "${{ needs.test-backend.result }}" != "success" || \
+                "${{ needs.test-frontend.result }}" != "success" || \
+                "${{ needs.lint.result }}" != "success" || \
+                "${{ needs.security.result }}" != "success" ]]; then
+            echo "One or more required checks failed:"
+            echo "  test-backend : ${{ needs.test-backend.result }}"
+            echo "  test-frontend: ${{ needs.test-frontend.result }}"
+            echo "  lint         : ${{ needs.lint.result }}"
+            echo "  security     : ${{ needs.security.result }}"
+            exit 1
+          fi
+          echo "All checks passed ✓"

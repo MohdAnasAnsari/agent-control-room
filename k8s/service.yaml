@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator-backend
+  namespace: orchestrator
+  labels:
+    app: orchestrator-backend
+spec:
+  # LoadBalancer provisions a cloud load balancer (AWS ELB / GCP LB)
+  type: LoadBalancer
+  selector:
+    app: orchestrator-backend
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8000

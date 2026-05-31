@@ -1,0 +1,91 @@
+# ── Monitoring stack ──────────────────────────────────────────────────────────
+# Extend the main docker-compose.yml with observability services.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+#
+# Services:
+#   Prometheus   → http://localhost:9090
+#   Grafana      → http://localhost:3001  (admin / admin — change in production)
+#   AlertManager → http://localhost:9093
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+
+  # ── Prometheus ───────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+      - --web.enable-admin-api
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - internal
+      - public
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  # ── AlertManager ─────────────────────────────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --log.level=info
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    networks:
+      - internal
+      - public
+    restart: unless-stopped
+
+  # ── Grafana ───────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://localhost:3001"
+      GF_FEATURE_TOGGLES_ENABLE: "publicDashboards"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    networks:
+      - internal
+      - public
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
+
+networks:
+  internal:
+    external: true
+    name: agent-control-room_internal
+  public:
+    external: true
+    name: agent-control-room_public

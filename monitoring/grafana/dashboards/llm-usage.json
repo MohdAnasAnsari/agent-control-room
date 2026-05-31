@@ -1,0 +1,125 @@
+{
+  "title": "Orchestrator — LLM Usage & Cost",
+  "uid": "orchestrator-llm",
+  "description": "Token usage, cost, latency, and error rates per LLM provider and model.",
+  "tags": ["orchestrator", "llm", "cost"],
+  "timezone": "browser",
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "provider",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(llm_requests_total, provider)",
+        "query": "label_values(llm_requests_total, provider)",
+        "multi": true,
+        "includeAll": true,
+        "label": "Provider"
+      },
+      {
+        "name": "model",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(llm_requests_total{provider=~\"$provider\"}, model)",
+        "query": "label_values(llm_requests_total{provider=~\"$provider\"}, model)",
+        "multi": true,
+        "includeAll": true,
+        "label": "Model"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total Requests (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(llm_requests_total{provider=~\"$provider\", model=~\"$model\"}[24h]))", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "title": "Total Tokens (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(llm_tokens_total{provider=~\"$provider\", model=~\"$model\"}[24h]))", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "title": "Estimated Cost (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(llm_cost_usd_total{provider=~\"$provider\", model=~\"$model\"}[24h]))", "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "title": "Error Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 }] }
+        }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(llm_requests_total{status=\"error\", provider=~\"$provider\", model=~\"$model\"}[5m])) / sum(rate(llm_requests_total{provider=~\"$provider\", model=~\"$model\"}[5m]))", "refId": "A" }]
+    },
+    {
+      "id": 10,
+      "title": "Token Usage Over Time (input vs output)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "right" } },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 15 } } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(llm_tokens_total{direction=\"input\", provider=~\"$provider\", model=~\"$model\"}[5m])) by (model) * 60", "legendFormat": "input {{model}}", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(llm_tokens_total{direction=\"output\", provider=~\"$provider\", model=~\"$model\"}[5m])) by (model) * 60", "legendFormat": "output {{model}}", "refId": "B" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "LLM Latency p50 / p95 by Model",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "right" } },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 5 } } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.50, sum(rate(llm_request_duration_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[5m])) by (le, model))", "legendFormat": "p50 {{model}}", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum(rate(llm_request_duration_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[5m])) by (le, model))", "legendFormat": "p95 {{model}}", "refId": "B" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Cumulative Cost by Model (running total)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 12 },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(llm_cost_usd_total{provider=~\"$provider\", model=~\"$model\"}) by (model)", "legendFormat": "{{model}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "LLM Requests/min by Status",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 12 },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "reqpm" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(llm_requests_total{status=\"success\", provider=~\"$provider\", model=~\"$model\"}[1m])) * 60", "legendFormat": "success", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(llm_requests_total{status=\"error\", provider=~\"$provider\", model=~\"$model\"}[1m])) * 60", "legendFormat": "error", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(llm_requests_total{status=\"timeout\", provider=~\"$provider\", model=~\"$model\"}[1m])) * 60", "legendFormat": "timeout", "refId": "C" }
+      ]
+    }
+  ]
+}

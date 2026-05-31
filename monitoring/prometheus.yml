@@ -1,0 +1,60 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  # Attach these labels to all time series scraped from this Prometheus instance
+  external_labels:
+    cluster: orchestrator
+    environment: development
+
+# AlertManager endpoints
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Alert rule files
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+# ── Scrape configurations ──────────────────────────────────────────────────────
+scrape_configs:
+
+  # ── Backend API ──────────────────────────────────────────────────────────────
+  - job_name: orchestrator-backend
+    scrape_interval: 15s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - backend:8000
+        labels:
+          service: backend
+    # Normalize high-cardinality path labels from {id} segments
+    metric_relabel_configs:
+      - source_labels: [endpoint]
+        regex: '.*/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(.*)'
+        target_label: endpoint
+        replacement: '${1}/{id}${2}'
+
+  # ── PostgreSQL (via postgres_exporter) ───────────────────────────────────────
+  # Uncomment if you deploy postgres_exporter alongside postgres.
+  # - job_name: postgres
+  #   static_configs:
+  #     - targets:
+  #         - postgres-exporter:9187
+  #       labels:
+  #         service: postgres
+
+  # ── Redis (via redis_exporter) ───────────────────────────────────────────────
+  # - job_name: redis
+  #   static_configs:
+  #     - targets:
+  #         - redis-exporter:9121
+  #       labels:
+  #         service: redis
+
+  # ── Prometheus self-monitoring ────────────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090

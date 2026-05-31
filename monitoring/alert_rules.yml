@@ -1,0 +1,132 @@
+groups:
+  # ── API Health ───────────────────────────────────────────────────────────────
+  - name: api_health
+    interval: 30s
+    rules:
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Error rate > 5% for 2 minutes"
+          description: >
+            {{ $value | humanizePercentage }} of requests returned 5xx in the last
+            5 minutes. Investigate error logs immediately.
+          runbook_url: "https://github.com/your-org/your-repo/blob/main/docs/runbooks/high-error-rate.md"
+
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "p99 latency > 5s on {{ $labels.endpoint }}"
+          description: >
+            p99 latency for {{ $labels.endpoint }} is {{ $value | humanizeDuration }},
+            exceeding the 5 s SLO.
+          runbook_url: "https://github.com/your-org/your-repo/blob/main/docs/runbooks/high-latency.md"
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "p95 latency > 2s globally"
+          description: >
+            Global p95 latency is {{ $value | humanizeDuration }}.
+            Check for slow queries or LLM API degradation.
+
+      - alert: ServiceDown
+        expr: up{job="orchestrator-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Backend service is unreachable"
+          description: "Prometheus cannot scrape /metrics from the backend. Service may be down."
+          runbook_url: "https://github.com/your-org/your-repo/blob/main/docs/runbooks/service-down.md"
+
+  # ── Workflow Execution Health ─────────────────────────────────────────────────
+  - name: execution_health
+    rules:
+
+      - alert: HighExecutionFailureRate
+        expr: |
+          (
+            sum(rate(workflow_executions_total{status="failure"}[10m]))
+            /
+            sum(rate(workflow_executions_total[10m]))
+          ) > 0.20
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Workflow execution failure rate > 20%"
+          description: >
+            {{ $value | humanizePercentage }} of workflow executions are failing.
+            Check LLM provider connectivity and execution logs.
+
+      - alert: LLMProviderErrors
+        expr: |
+          sum(rate(llm_requests_total{status="error"}[5m])) by (provider, model) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "LLM errors on {{ $labels.provider }}/{{ $labels.model }}"
+          description: >
+            {{ $value | humanize }} error/s from {{ $labels.provider }}
+            ({{ $labels.model }}). API key exhausted or provider outage?
+
+      - alert: LLMHighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(llm_request_duration_seconds_bucket[5m])) by (le, provider, model)
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "LLM p95 > 30s on {{ $labels.provider }}/{{ $labels.model }}"
+          description: "Provider latency degraded. Consider switching to fallback model."
+
+  # ── Cost Monitoring ──────────────────────────────────────────────────────────
+  - name: cost_monitoring
+    rules:
+
+      - alert: HighTokenSpend
+        expr: |
+          sum(increase(llm_tokens_total[1h])) by (provider, model) > 1000000
+        for: 0m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "{{ $labels.model }}: > 1M tokens in the last hour"
+          description: >
+            Unusually high token consumption from {{ $labels.provider }}/{{ $labels.model }}.
+            Possible runaway loop or automated abuse.
